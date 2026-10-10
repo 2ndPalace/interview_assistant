@@ -1,0 +1,6 @@
+faster-whisper
+soundcard
+numpy
+scikit-learn
+pyttsx3
+pywin32
