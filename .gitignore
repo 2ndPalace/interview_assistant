@@ -9,6 +9,9 @@ test3.txt
 improving.txt
 Test.txt
 eval_data/
+transcripts/
 # プロファイルは個人の回答や選考情報を含むため公開しない（共通の質問のひな形だけ管理する）
 profiles/*.json
 !profiles/_common.example.json
+
+agy_logs/

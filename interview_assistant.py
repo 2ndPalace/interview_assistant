@@ -107,6 +107,7 @@ COLORS = {
 class Point:
     text: str
     check: list[str]
+    cue: str = ""   # 本番モードで表示する短いキーワード（無ければ text を表示）
 
 
 @dataclass
@@ -130,7 +131,7 @@ def _parse_questions(data: dict, scope: str) -> list[Question]:
                 title=q["title"],
                 variants=q["variants"],
                 keywords=q.get("keywords", []),
-                points=[Point(p["text"], p.get("check", [])) for p in q["points"]],
+                points=[Point(p["text"], p.get("check", []), p.get("cue", "")) for p in q["points"]],
                 full=q.get("full", ""),
                 target_seconds=int(q.get("target_seconds", 40)),
                 scope=scope,
@@ -727,7 +728,8 @@ class App:
         ttk.Button(row, text="次の質問（苦手優先）", command=self.next_question).pack(side="left")
         self.ans_btn = ttk.Button(row, text="回答開始", command=self.toggle_answer, state="disabled")
         self.ans_btn.pack(side="left", padx=6)
-        ttk.Button(row, text="模範回答を見る", command=self.show_model).pack(side="left")
+        ttk.Button(row, text="キーワードを見る", command=self.show_cues).pack(side="left")
+        ttk.Button(row, text="模範回答を見る", command=self.show_model).pack(side="left", padx=6)
         ttk.Checkbutton(row, text="質問を読み上げる", variable=self.read_aloud).pack(side="left", padx=10)
 
         self.result = self._text(f, height=20)
@@ -813,6 +815,18 @@ class App:
         self.ans_btn.config(state="normal")
         self.status("記録しました。「回答開始」でやり直し、「次の質問」で次へ")
 
+    def show_cues(self):
+        """本番と同じキーワードだけを表示する（キーワードから自分の言葉で話す練習用）"""
+        q = self.current_q
+        if not q:
+            return
+        self.result.configure(state="normal")
+        self.result.insert("end", "\nキーワード\n", "h")
+        for p in q.points:
+            self.result.insert("end", f"・{p.cue or p.text}\n", "todo" if "[要" in p.text else "accent")
+        self.result.configure(state="disabled")
+        self.result.see("end")
+
     def show_model(self):
         q = self.current_q
         if not q:
@@ -840,6 +854,10 @@ class App:
         self.topmost = tk.BooleanVar(value=True)
         ttk.Checkbutton(row, text="最前面", variable=self.topmost,
                         command=lambda: self.root.attributes("-topmost", self.topmost.get())).pack(side="left", padx=8)
+        self.cue_only = tk.BooleanVar(value=True)
+        ttk.Checkbutton(row, text="キーワードのみ", variable=self.cue_only,
+                        command=lambda: self.pick_candidate(self.live_shown)).pack(side="left")
+        self.live_shown = -1
 
         self.heard = ttk.Label(f, text="", style="Sub.TLabel", wraplength=700)
         self.heard.pack(anchor="w")
@@ -898,6 +916,7 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     def _on_live_text(self, text: str):
+        self.live_shown = -1
         self.heard.config(text=f"聞き取り: {text}")
         self.live_candidates = self.matcher.match(text)
         for w in self.cand_row.winfo_children():
@@ -916,8 +935,9 @@ class App:
         self.status("聞き取り中" if self.recorder else "待機中")
 
     def pick_candidate(self, i: int):
-        if self.mode.get() != "live" or i >= len(self.live_candidates):
+        if self.mode.get() != "live" or i < 0 or i >= len(self.live_candidates):
             return
+        self.live_shown = i
         q = self.live_candidates[i][0]
         missed = self.log.last_missed(q)
         chunks: list[tuple[str, str | tuple]] = [(f"{q.title}　（目安 {q.target_seconds} 秒）\n", "accent")]
@@ -928,7 +948,8 @@ class App:
                 tag = "warn"   # 前回の練習で言い漏れた要点
             else:
                 tag = ()
-            chunks.append((f"・{p.text}\n", tag))
+            label = p.cue if (self.cue_only.get() and p.cue) else p.text
+            chunks.append((f"・{label}\n", tag))
         if missed:
             chunks.append(("\nオレンジ = 前回の練習で言い漏れた要点\n", "sub"))
         self._write(self.live_view, chunks)
